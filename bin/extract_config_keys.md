@@ -33,7 +33,7 @@ The **Configuration Key Extractor** (`extract_config_keys.py`) scans the Stalwar
 A Python utility that:
 - Scans all Rust source files in the Stalwart codebase (797 files)
 - Uses regex patterns to find configuration key access patterns
-- Discovers **173 unique configuration keys** including template keys
+- Discovers **286 unique configuration keys** including template keys
 - Supports three output formats: **tree**, **flat**, and **JSON**
 - Can filter keys by prefix for focused exploration
 
@@ -121,36 +121,96 @@ This tree layout makes it easy to:
 
 **Remember:** This shows the *structure* and *names* of keys, not their actual values or defaults.
 
-## Understanding `<id>` Placeholders
+## Understanding Template Placeholders: `<id>` and `<key>`
 
-Keys containing `<id>` are **template keys** that support user-defined identifiers. You can create multiple instances with different names.
+Keys containing **`<id>`** or **`<key>`** are **template keys** that represent dynamic, user-defined parts of configuration keys. These are NOT literal strings you type in your config—they're placeholders showing where YOU provide custom names.
 
-### Example
+### Template Placeholder Types
 
-Instead of `queue.tls.<id>.dane`, you might define:
+#### `<id>` - Named Configuration Objects
+Represents a user-defined identifier for a named configuration object or policy.
 
+**Example:** `queue.tls.<id>.dane`
+
+You replace `<id>` with your custom name:
 ```toml
-# In your config.toml
+# Define multiple TLS policies with different names
 [queue.tls.default]
 dane = "optional"
 starttls = "optional"
-allow-invalid-certs = false
 
 [queue.tls.strict]
 dane = "require"
 starttls = "require"
-allow-invalid-certs = false
 
 [queue.tls.legacy]
 dane = "disable"
 starttls = "optional"
-allow-invalid-certs = true
 ```
 
-Then reference these policies elsewhere in your configuration:
+Then reference by name: `tls = "default"` or `tls = "strict"`
+
+#### `<key>` - Individual Entries in Lists
+Represents individual keys/entries within a collection or lookup table.
+
+**Example:** `lookup.<id>.<key>`
+
+Both `<id>` (list name) and `<key>` (entry name) are user-defined:
 ```toml
-[queue.strategy]
-tls = "default"  # Or "strict", "legacy", etc.
+# lookup.<id>.<key> becomes:
+lookup.url-redirectors.mockurl.com =
+lookup.url-redirectors.moourl.com =
+lookup.url-redirectors.mrte.ch =
+
+lookup.spf-deny.spam-domain.net =
+lookup.spf-deny.bad-sender.com =
+```
+
+Here:
+- `<id>` = `url-redirectors` or `spf-deny` (your list name)
+- `<key>` = `mockurl.com`, `spam-domain.net`, etc. (individual entries)
+
+#### `<id>.<key>` - Nested Dynamic Structure
+Some templates have TWO levels of user-defined names.
+
+**Example:** `spam-filter.list.<id>.<key>`
+
+```toml
+# spam-filter.list.<id>.<key> becomes:
+spam-filter.list.scores.RCVD_NO_TLS_LAST = 0.1
+spam-filter.list.scores.RCVD_TLS_ALL = 0.0
+spam-filter.list.scores.SUSPICIOUS_PATTERN = 2.5
+
+spam-filter.list.file-extensions.exe = BAD
+spam-filter.list.file-extensions.pdf = application/pdf
+```
+
+Here:
+- `<id>` = `scores` or `file-extensions` (category name)
+- `<key>` = `RCVD_NO_TLS_LAST`, `exe`, etc. (specific item)
+
+### Real-World Template Examples
+
+| Template Pattern | Real Configuration Example |
+|------------------|----------------------------|
+| `queue.tls.<id>.dane` | `queue.tls.default.dane = "optional"` |
+| `queue.route.<id>.type` | `queue.route.mx.type = "mx"` |
+| `lookup.<id>.<key>` | `lookup.url-redirectors.bit.ly = ` |
+| `spam-filter.list.<id>.<key>` | `spam-filter.list.scores.SPF_FAIL = 5.0` |
+| `spam-filter.rule.<id>.enable` | `spam-filter.rule.check_spf.enable = true` |
+| `store.<id>.type` | `store.rocksdb.type = "rocksdb"` |
+
+### Key Takeaway
+
+**Template placeholders show STRUCTURE, not literal strings.**
+- `<id>` = "You name it" (policy name, list name, object ID)
+- `<key>` = "Individual entry" (specific item within the collection)
+
+When you see `lookup.<id>.<key>` in the extraction output, it means you can create ANY lookup list with ANY entries, like:
+```toml
+lookup.my-custom-list.entry1 = value
+lookup.my-custom-list.entry2 = value
+lookup.another-list.foo = bar
 ```
 
 ## How It Works
@@ -206,7 +266,7 @@ The utility analyzes patterns in the Rust source code where the `config` object 
 python3 extract_config_keys.py
 ```
 
-Output: Hierarchical tree of all 173 configuration keys
+Output: Hierarchical tree of all 286 configuration keys
 
 ### Find All Queue-Related Keys
 
@@ -274,9 +334,9 @@ Options:
 
 ## Statistics
 
-- **173 unique configuration keys** discovered
+- **286 unique configuration keys** discovered
 - **797 Rust files** analyzed
-- Includes both concrete keys and template keys with `<id>` placeholders
+- Includes both concrete keys and template keys with `<id>` and `<key>` placeholders
 
 ## Output Formats
 
@@ -391,6 +451,59 @@ queue.tls.<id>.timeout.tls
 3. Explore the tree output, or use `--filter` to narrow down to specific sections
 
 4. For detailed usage information, see `CONFIG_KEY_EXTRACTOR_README.md`
+
+## Extraction Improvements & Changelog
+
+### Version 2 - Enhanced Detection (286 keys)
+
+**Problems Addressed:**
+1. Missing keys accessed via chained method calls (`.property_or_default(...)`)
+2. Not detecting `config.iterate_prefix()` pattern
+3. Variables in tuples not recognized as template placeholders
+
+**Improvements Made:**
+
+**1. Added `config.iterate_prefix()` Support**
+- Detects: `config.iterate_prefix("spam-filter.list")`
+- Generates: `spam-filter.list.<id>.<key>`
+- **Impact:** +4 new template patterns discovered
+
+**2. Enhanced Tuple Pattern Matching**
+- Now matches: `config.property((...))` AND `.property_or_default((...))`
+- Handles chained method calls from config builders
+- **Impact:** +109 new keys discovered
+
+**3. Improved Variable Detection in Tuples**
+- Recognizes: `("spam-filter.rule", id, "enable")` → `spam-filter.rule.<id>.enable`
+- Detects common variable names: `id`, `prefix`, `key`, `name`
+- **Impact:** Properly templated 50+ keys that were previously malformed
+
+**Results:**
+- **Before:** 173 keys
+- **After:** 286 keys
+- **Improvement:** +113 keys (65% increase)
+
+### Patterns Now Detected
+
+```rust
+// Pattern 1: Direct config access
+config.property("simple.key")
+config.property(("tuple", "key"))
+
+// Pattern 2: Chained method calls (NEW)
+.property_or_default(("spam-filter.rule", id, "enable"), "true")
+
+// Pattern 3: Dynamic key discovery
+config.sub_keys("queue.tls", ".dane")
+config.sub_keys_with_suffixes("queue.tls", &[".dane", ".starttls"])
+
+// Pattern 4: Iteration patterns (NEW)
+config.iterate_prefix("spam-filter.list")
+config.iterate_prefix("lookup")
+
+// Pattern 5: Value access
+config.values("key.path")
+```
 
 ## Conclusion
 

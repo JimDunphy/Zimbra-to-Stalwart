@@ -62,7 +62,7 @@ class ConfigKeyExtractor:
         if tuple_str.startswith('(') and tuple_str.endswith(')'):
             tuple_str = tuple_str[1:-1]
 
-        # Split by comma and extract quoted strings
+        # Split by comma and extract parts
         parts = []
         for part in tuple_str.split(','):
             part = part.strip()
@@ -70,6 +70,15 @@ class ConfigKeyExtractor:
             match = re.search(r'["\']([^"\']+)["\']', part)
             if match:
                 parts.append(match.group(1))
+            else:
+                # Non-quoted part - likely a variable like 'id', 'id.as_str()', 'prefix'
+                # Check if it's a variable identifier (not empty and not a keyword)
+                var_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)', part)
+                if var_match:
+                    var_name = var_match.group(1)
+                    # Replace common variable names with template placeholder
+                    if var_name in ('id', 'prefix', 'key', 'name'):
+                        parts.append('<id>')
 
         return '.'.join(parts) if parts else None
 
@@ -82,7 +91,8 @@ class ConfigKeyExtractor:
             return
 
         # Pattern 1: Tuple-based config access like config.property(("key", "subkey"))
-        tuple_pattern = r'config\.(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|properties)\s*(?:<[^>]+>)?\s*\(\s*\(([^)]+)\)'
+        # Also matches chained calls like .property_or_default(("key", id, "subkey"))
+        tuple_pattern = r'\.?(?:config\.)?(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|properties)\s*(?:<[^>]+>)?\s*\(\s*\(([^)]+)\)'
         for match in re.finditer(tuple_pattern, content):
             key = self.extract_key_from_tuple(match.group(1))
             if key:
@@ -154,6 +164,27 @@ class ConfigKeyExtractor:
                 self.key_contexts[key].append({
                     'file': str(file_path.relative_to(self.source_dir)),
                     'type': 'values'
+                })
+
+        # Pattern 5: config.iterate_prefix("key.path")
+        # This iterates over keys like "key.path.id.subkey", generating dynamic keys
+        iterate_prefix_pattern = r'config\.iterate_prefix\s*\(\s*"([^"]+)"\s*\)'
+        for match in re.finditer(iterate_prefix_pattern, content):
+            prefix = match.group(1).strip()
+            if prefix:
+                # Add the base prefix
+                self.config_keys.add(prefix)
+                self.key_contexts[prefix].append({
+                    'file': str(file_path.relative_to(self.source_dir)),
+                    'type': 'iterate_prefix'
+                })
+
+                # Add template for dynamic keys: prefix.<id>.<key>
+                template_key = f"{prefix}.<id>.<key>"
+                self.config_keys.add(template_key)
+                self.key_contexts[template_key].append({
+                    'file': str(file_path.relative_to(self.source_dir)),
+                    'type': 'iterate_prefix_template'
                 })
 
     def scan_codebase(self):
