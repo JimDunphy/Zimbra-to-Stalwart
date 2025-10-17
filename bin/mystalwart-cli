@@ -1,0 +1,14 @@
+#!/bin/bash
+export PATH=/opt/stalwart/bin:$PATH
+export URL=https://127.0.0.1:443
+export CREDENTIALS="CHANGE_ME"
+#stalwart-cli queue --help
+#stalwart-cli queue cancel 3B7C1CDEDA1E0F2
+#stalwart-cli queue cancel 3B7CF0E498003E3
+#stalwart-cli queue list
+#stalwart-cli server --help
+#stalwart-cli server list-config
+#stalwart-cli server delete-config auth.spf
+#stalwart-cli server delete-config auth.dmarc
+#stalwart-cli server list-config
+stalwart-cli $@
