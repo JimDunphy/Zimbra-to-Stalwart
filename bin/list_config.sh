@@ -38,8 +38,9 @@ ${BOLD}Options:${NC}
   -P, --prefix PREFIXES  Get all keys with prefixes (comma-separated)
   -G, --group PREFIX     Group keys by prefix (e.g., queue.tls)
   -s, --suffix SUFFIX    Suffix for grouping (used with --group)
-  -j, --json             Output raw JSON
+  -j, --json             Output raw JSON (always complete, never truncated)
   -t, --tree             Display in tree format (default for --list)
+  -w, --width NUM        Truncate values at NUM characters for readability (default: 0 = no truncation)
   -h, --help             Show this help message
 
 ${BOLD}Examples:${NC}
@@ -58,8 +59,11 @@ ${BOLD}Examples:${NC}
   # Group queue TLS configurations
   $0 --group queue.tls --suffix dane
 
-  # Output raw JSON
+  # Output raw JSON (always complete)
   $0 --list queue --json
+
+  # Truncate long values for readability
+  $0 --list certificate --width 80
 
 ${BOLD}Environment Variables:${NC}
   STALWART_URL     Server URL (default: http://localhost:8080)
@@ -141,9 +145,10 @@ display_tree() {
                 ;;
         esac
 
-        # Truncate long values
-        if [ ${#value} -gt 60 ]; then
-            value="${value:0:57}..."
+        # Truncate long values if TRUNCATE_WIDTH > 0
+        if [ "$TRUNCATE_WIDTH" -gt 0 ] && [ ${#value} -gt "$TRUNCATE_WIDTH" ]; then
+            local trim_to=$((TRUNCATE_WIDTH - 3))
+            value="${value:0:${trim_to}}..."
         fi
 
         echo -e "${indent}${colored_key} = ${value}"
@@ -212,6 +217,7 @@ GROUP_PREFIX=""
 GROUP_SUFFIX=""
 OUTPUT_JSON=false
 OUTPUT_TREE=true
+TRUNCATE_WIDTH=0  # Default: no truncation (safe for data integrity)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -265,6 +271,14 @@ while [[ $# -gt 0 ]]; do
         -t|--tree)
             OUTPUT_TREE=true
             OUTPUT_JSON=false
+            shift
+            ;;
+        -w|--width)
+            TRUNCATE_WIDTH="$2"
+            shift 2
+            ;;
+        -n|--no-truncate)
+            TRUNCATE_WIDTH=0
             shift
             ;;
         *)

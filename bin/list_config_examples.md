@@ -261,6 +261,31 @@ The script color-codes keys based on where they should be stored:
 
 If you see mismatched colors (e.g., a `queue.*` key marked as `[local]`), you might have configuration in the wrong place!
 
+## Important: Data Integrity and Value Truncation
+
+**By default, `list_config.sh` shows COMPLETE values without truncation** to ensure data integrity. This is critical because:
+
+- You get the full configuration data, suitable for backup/export
+- No risk of mistaking truncated values for complete data
+- Safe for scripting and automation
+
+**If you want truncated output for readability:**
+
+```bash
+# Truncate values at 60 characters for easier browsing
+./list_config.sh --list --width 60
+
+# Truncate at 100 characters
+./list_config.sh --list auth --width 100
+```
+
+**JSON output is always complete:**
+
+```bash
+# Always shows full values, never truncated
+./list_config.sh --list --json
+```
+
 ## Troubleshooting
 
 ### Authentication Errors
