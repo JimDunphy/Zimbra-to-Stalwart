@@ -33,7 +33,7 @@ The **Configuration Key Extractor** (`extract_config_keys.py`) scans the Stalwar
 A Python utility that:
 - Scans all Rust source files in the Stalwart codebase (797 files)
 - Uses regex patterns to find configuration key access patterns
-- Discovers **286 unique configuration keys** including template keys
+- Discovers **562 unique configuration keys** including template keys
 - Supports three output formats: **tree**, **flat**, and **JSON**
 - Can filter keys by prefix for focused exploration
 
@@ -266,7 +266,7 @@ The utility analyzes patterns in the Rust source code where the `config` object 
 python3 extract_config_keys.py
 ```
 
-Output: Hierarchical tree of all 286 configuration keys
+Output: Hierarchical tree of all 562 configuration keys
 
 ### Find All Queue-Related Keys
 
@@ -334,9 +334,10 @@ Options:
 
 ## Statistics
 
-- **286 unique configuration keys** discovered
+- **562 unique configuration keys** discovered (after removing false positives)
 - **797 Rust files** analyzed
 - Includes both concrete keys and template keys with `<id>` and `<key>` placeholders
+- **Progress:** 173 → 286 → 528 → 568 → 562 keys (+389 total, +225% increase from v1)
 
 ## Output Formats
 
@@ -483,6 +484,89 @@ queue.tls.<id>.timeout.tls
 - **After:** 286 keys
 - **Improvement:** +113 keys (65% increase)
 
+### Version 3 - Method Variants & Turbofish (528 keys)
+
+**Problems Addressed:**
+1. Missing `resolver.edns` and `resolver.custom` keys
+2. Methods with default value arguments not detected (e.g., `.property_or_default("key", "default")`)
+3. Missing method variants: `property_or_else`, `value_or_else`
+4. Rust turbofish syntax not supported (e.g., `::<Type>`)
+
+**Improvements Made:**
+
+**1. Fixed Method Arguments Pattern**
+- **Before:** Expected only key argument: `\s*"([^"]+)"\s*\)`
+- **After:** Allows additional arguments: `\s*"([^"]+)"[^)]*\)`
+- Handles: `.property_or_default("resolver.edns", "true")`
+- **Impact:** +162 keys discovered
+
+**2. Added New Method Variants**
+- Added: `property_or_else`, `value_or_else`
+- These methods provide fallback key lookups
+- **Impact:** Found server.listener configuration keys
+
+**3. Initial Turbofish Support**
+- Pattern: `(?:::<[^>]+>)?` to match `::<Type>`
+- Supports: `config.properties::<SocketAddr>(("server.listener", id, "bind"))`
+- **Impact:** +80 keys including server.listener.<id>.bind
+
+**Results:**
+- **Before:** 286 keys
+- **After:** 528 keys
+- **Improvement:** +242 keys (85% increase from v2)
+
+### Version 4 - Nested Generics Support (568 keys → 562 keys)
+
+**Problem Addressed:**
+Missing socket configuration keys:
+- `server.listener.<id>.socket.ttl`
+- `server.listener.<id>.socket.backlog`
+- `server.listener.<id>.socket.linger`
+
+**Root Cause:**
+The turbofish pattern `(?:::<[^>]+>)?` failed on nested generics like `::<Option<u32>>`:
+- Pattern `[^>]+` stopped at first `>`, matching only `<Option`
+- Left `<u32>>` unmatched, breaking the regex
+
+**Fix:**
+- **Before:** `(?:::<[^>]+>)?` - stopped at first `>`
+- **After:** `(?:::<[^(]+)?` - matches everything until `(`
+- Handles nested generics: `::<Option<u32>>`, `::<Option<Duration>>`
+
+**Impact:**
+- Found all socket sub-keys with type parameters
+- **Before:** 528 keys
+- **After:** 568 keys
+- **Improvement:** +40 keys (additional nested generic matches)
+
+**Example:**
+```rust
+// Now correctly detected:
+ttl: config.property_or_else::<Option<u32>>(
+    ("server.listener", id, "socket.ttl"),
+    "server.socket.ttl",
+    "false",
+)
+```
+
+**False Positives Fix:**
+After initial nested generics support, discovered 6 false positives:
+- Cron expressions: `"0 0 *"`, `"0 3 *"`, `"0 4 *"`, `"0 5 *"`, `"0 * *"`
+- From: `SimpleCron::parse_value("0 0 *")` being matched
+
+**Root Cause:** Pattern allowed both `config.` and `.` to be optional, matching bare method names like `parse_value`, `try_parse_value`, etc.
+
+**Fix:** Required at least one prefix:
+```python
+# Before: \.?(?:config\.)?  - both optional, too loose
+# After:  (?:config\.|\.)   - at least one required
+```
+
+**Final Result:**
+- Removed 6 false positives
+- All legitimate keys preserved
+- **Final: 562 configuration keys**
+
 ### Patterns Now Detected
 
 ```rust
@@ -490,19 +574,30 @@ queue.tls.<id>.timeout.tls
 config.property("simple.key")
 config.property(("tuple", "key"))
 
-// Pattern 2: Chained method calls (NEW)
+// Pattern 2: Chained method calls
 .property_or_default(("spam-filter.rule", id, "enable"), "true")
+.property_or_else(("server.listener", id, "socket.ttl"), "server.socket.ttl", "false")
 
-// Pattern 3: Dynamic key discovery
+// Pattern 3: Rust turbofish syntax (explicit type parameters)
+config.properties::<SocketAddr>(("server.listener", id, "bind"))
+config.property_or_else::<Option<u32>>(("server.listener", id, "socket.ttl"), ...)
+config.property_or_else::<Option<Duration>>(("server.listener", id, "socket.linger"), ...)
+
+// Pattern 4: Methods with default values
+config.property_or_default("resolver.edns", "true")
+config.value_or_else("resolver.custom", "8.8.8.8")
+
+// Pattern 5: Dynamic key discovery
 config.sub_keys("queue.tls", ".dane")
 config.sub_keys_with_suffixes("queue.tls", &[".dane", ".starttls"])
 
-// Pattern 4: Iteration patterns (NEW)
+// Pattern 6: Iteration patterns
 config.iterate_prefix("spam-filter.list")
 config.iterate_prefix("lookup")
 
-// Pattern 5: Value access
+// Pattern 7: Value access
 config.values("key.path")
+config.values_or_else("resolver.custom", default_fn)
 ```
 
 ## Conclusion

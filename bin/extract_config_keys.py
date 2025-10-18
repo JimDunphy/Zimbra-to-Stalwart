@@ -92,7 +92,9 @@ class ConfigKeyExtractor:
 
         # Pattern 1: Tuple-based config access like config.property(("key", "subkey"))
         # Also matches chained calls like .property_or_default(("key", id, "subkey"))
-        tuple_pattern = r'\.?(?:config\.)?(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|properties)\s*(?:<[^>]+>)?\s*\(\s*\(([^)]+)\)'
+        # Supports Rust turbofish syntax with nested generics: config.properties::<Option<u32>>((...))
+        # Requires either 'config.' OR leading '.' to avoid matching parse_value(), etc.
+        tuple_pattern = r'(?:config\.|\.)(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|property_or_else|value_or_else|properties)\s*(?:::<[^(]+)?\s*\(\s*\(([^)]+)\)'
         for match in re.finditer(tuple_pattern, content):
             key = self.extract_key_from_tuple(match.group(1))
             if key:
@@ -103,7 +105,11 @@ class ConfigKeyExtractor:
                 })
 
         # Pattern 2: Simple string-based config access like config.property("simple.key")
-        simple_pattern = r'config\.(?:property|value|value_require|value_require_non_empty|property_require|property_or_default)\s*(?:<[^>]+>)?\s*\(\s*"([^"]+)"\s*\)'
+        # Also matches chained calls like .property_or_default("resolver.edns", "true")
+        # The [^)]* allows for additional arguments after the key (like default values)
+        # Supports Rust turbofish syntax with nested generics: config.property::<Option<u32>>("key")
+        # Requires either 'config.' OR leading '.' to avoid matching parse_value(), etc.
+        simple_pattern = r'(?:config\.|\.)(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|property_or_else|value_or_else|properties)\s*(?:::<[^(]+)?\s*\(\s*"([^"]+)"[^)]*\)'
         for match in re.finditer(simple_pattern, content):
             key = match.group(1).strip()
             if key and not key.startswith('&'):
@@ -155,8 +161,10 @@ class ConfigKeyExtractor:
                     'type': 'sub_keys_with_suffixes_template'
                 })
 
-        # Pattern 4: config.values("key.path")
-        values_pattern = r'config\.values\s*\(\s*"([^"]+)"\s*\)'
+        # Pattern 4: config.values("key.path") and config.values_or_else(...)
+        # Also matches chained calls like .values("resolver.custom")
+        # Requires either 'config.' OR leading '.' to avoid false positives
+        values_pattern = r'(?:config\.|\.)(?:values|values_or_else)\s*\(\s*"([^"]+)"[^)]*\)'
         for match in re.finditer(values_pattern, content):
             key = match.group(1).strip()
             if key:
