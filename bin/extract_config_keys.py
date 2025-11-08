@@ -71,13 +71,13 @@ class ConfigKeyExtractor:
             if match:
                 parts.append(match.group(1))
             else:
-                # Non-quoted part - likely a variable like 'id', 'id.as_str()', 'prefix'
+                # Non-quoted part - likely a variable like 'id', 'id.as_str()', 'prefix', 'ip.to_string()', 'option'
                 # Check if it's a variable identifier (not empty and not a keyword)
                 var_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)', part)
                 if var_match:
                     var_name = var_match.group(1)
                     # Replace common variable names with template placeholder
-                    if var_name in ('id', 'prefix', 'key', 'name'):
+                    if var_name in ('id', 'prefix', 'key', 'name', 'ip', 'option'):
                         parts.append('<id>')
 
         return '.'.join(parts) if parts else None
@@ -94,7 +94,10 @@ class ConfigKeyExtractor:
         # Also matches chained calls like .property_or_default(("key", id, "subkey"))
         # Supports Rust turbofish syntax with nested generics: config.properties::<Option<u32>>((...))
         # Requires either 'config.' OR leading '.' to avoid matching parse_value(), etc.
-        tuple_pattern = r'(?:config\.|\.)(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|property_or_else|value_or_else|properties)\s*(?:::<[^(]+)?\s*\(\s*\(([^)]+)\)'
+        # Handles nested parentheses (e.g., ip.to_string()) and additional arguments after tuple
+        # Allows whitespace/newlines between opening parens for multi-line formatted code
+        # Pattern breakdown: ( optional-space ( [non-parens OR (nested-parens)] ) followed by ) or ,
+        tuple_pattern = r'(?:config\.|\.)(?:property|value|value_require|value_require_non_empty|property_require|property_or_default|property_or_else|value_or_else|properties)\s*(?:::<[^(]+)?\s*\(\s*\(((?:[^()]|\([^()]*\))+)\)(?=\s*[\),])'
         for match in re.finditer(tuple_pattern, content):
             key = self.extract_key_from_tuple(match.group(1))
             if key:
