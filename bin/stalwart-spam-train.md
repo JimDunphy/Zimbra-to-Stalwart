@@ -7,11 +7,16 @@ A Python utility to train Stalwart Mail Server's Bayes spam filter with email me
 - ✅ Train messages as spam or ham (legitimate email)
 - ✅ Global training or per-account training
 - ✅ Single file or batch directory processing
+- ✅ Mbox file support (Thunderbird, Dovecot, etc.)
 - ✅ Recursive directory scanning
 - ✅ Progress indicators for batch operations
 - ✅ Multiple authentication methods
 - ✅ Comprehensive error handling and reporting
 - ✅ Dry-run mode for testing
+- ✅ Test message classification (see spam scores)
+- ✅ Message count limiting (train first N messages)
+- ✅ Purge corrupted Bayes models
+- ✅ Show message counts without training
 
 ## Installation
 
@@ -154,6 +159,22 @@ stalwart-spam-train --verbose --type spam spam/
 # Stop on first error
 stalwart-spam-train --fail-fast --type spam spam/
 
+# Limit to first N messages (useful for testing or limiting load)
+stalwart-spam-train --type spam --count 200 spam.mbox
+
+# Show message counts without training (no auth needed)
+stalwart-spam-train --show-count spam_folder/
+
+# Purge corrupted model and retrain fresh
+stalwart-spam-train --type spam --purge-first \
+    --account user@example.com \
+    spam/
+
+# Test message classification (see spam score)
+stalwart-spam-train --test-message spam.eml \
+    --username admin --password xxx \
+    --server https://mail.example.com
+
 # Combine options
 stalwart-spam-train \
     --type spam \
@@ -196,18 +217,20 @@ stalwart-spam-train \
 ## Command-Line Options
 
 ```
-usage: stalwart-spam-train.py [-h] --type {spam,ham} [--account ACCOUNT]
+usage: stalwart-spam-train.py [-h] [--type {spam,ham}] [--account ACCOUNT]
                               [--server SERVER] [--token TOKEN]
                               [--username USERNAME] [--password PASSWORD]
                               [--recursive] [--pattern PATTERN] [--fail-fast]
-                              [--dry-run] [--verbose]
-                              path
+                              [--dry-run] [--verbose] [--test-message FILE]
+                              [--count N] [--show-count] [--purge-first]
+                              [path]
 
 positional arguments:
   path                  Path to email file or directory
 
-required arguments:
+training options:
   --type {spam,ham}     Training type: spam (unwanted) or ham (legitimate)
+  --count N             Limit training to first N messages
 
 authentication arguments:
   --token TOKEN         API token for authentication (recommended)
@@ -229,6 +252,12 @@ control options:
   --fail-fast           Stop on first error (default: continue and report)
   --dry-run             Show what would be done without training
   --verbose, -v         Verbose output
+
+utility options:
+  --test-message FILE   Test spam classification on a message (shows score and rules)
+  --show-count          Show message counts without training (no auth needed)
+  --purge-first         Purge existing Bayes model before training (use to reset
+                        corrupted model)
 ```
 
 ## Environment Variables
@@ -356,7 +385,107 @@ stalwart-spam-train \
     ~/Downloads/Takeout/Mail/Spam.mbox
 ```
 
-### Example 6: Scheduled Training Script
+### Example 6: Test Message Classification
+
+Test how a message would be scored without training:
+
+```bash
+# Test a spam message
+stalwart-spam-train --test-message spam.eml \
+    --username admin --password xxx \
+    --server https://mail.example.com
+
+# Output shows:
+# ======================================================================
+# SPAM SCORE: 10.45
+# ======================================================================
+#
+# TRIGGERED RULES:
+# ----------------------------------------------------------------------
+#   BAYES_SPAM                                   5.10  [allow]
+#   HACKED_WP_PHISHING                           4.50  [allow]
+#   MISSING_DATE                                 0.50  [allow]
+#   SPF_NA                                       0.30  [allow]
+#
+# INTERPRETATION:
+#   ✗ SPAM (likely unwanted)
+
+# Test with per-account Bayes model
+stalwart-spam-train --test-message ham.eml \
+    --username admin --password xxx \
+    --server https://mail.example.com \
+    --account user@example.com
+```
+
+### Example 7: Reset Corrupted Bayes Model
+
+If Bayes is classifying everything as spam, purge and retrain:
+
+```bash
+# Purge and retrain account model
+stalwart-spam-train --type spam --purge-first --count 280 \
+    --account user@example.com \
+    --username admin --password xxx \
+    spam.mbox
+
+# Then train ham (no --purge-first needed)
+stalwart-spam-train --type ham --count 280 \
+    --account user@example.com \
+    --username admin --password xxx \
+    ham.mbox
+
+# Verify it's fixed
+stalwart-spam-train --test-message spam.eml \
+    --username admin --password xxx \
+    --account user@example.com
+```
+
+**Warning:** `--purge-first` deletes ALL previous training data. Only use when resetting a corrupted model (e.g., after training the same messages multiple times).
+
+### Example 8: Limit Message Count
+
+Train only first N messages for testing or to limit load:
+
+```bash
+# Test with first 10 messages
+stalwart-spam-train --type spam --count 10 \
+    --verbose \
+    spam.mbox
+
+# Train 500 spam from large mbox
+stalwart-spam-train --type spam --count 500 \
+    --account user@example.com \
+    large-spam-archive.mbox
+```
+
+### Example 9: Show Message Counts
+
+Preview message counts before training:
+
+```bash
+# Show counts (no authentication needed)
+stalwart-spam-train --show-count spam_folder/
+
+# Show counts in mbox file
+stalwart-spam-train --show-count JunkMail.mbox
+
+# Output:
+# ======================================================================
+# MESSAGE COUNT
+# ======================================================================
+# Path: JunkMail.mbox
+#
+# Mbox files: 1
+#   JunkMail.mbox                              3,245 messages  (45,678,901 bytes)
+#
+# Total messages in mbox files: 3,245
+#
+# ======================================================================
+# GRAND TOTAL: 3,245 messages
+# ======================================================================
+```
+
+### Example 10: Scheduled Training Script
 
 Create a cron job to process user-reported spam:
 
@@ -505,6 +634,67 @@ Error: No email files found in /path/to/folder
 
 **Note:** Thunderbird stores each folder as an mbox file without extension. The `.msf` files are index files and should NOT be used.
 
+#### 6. Bayes Classifying Everything as Spam
+
+**Symptoms:**
+- Both spam AND ham messages score `BAYES_SPAM: 5.10`
+- All messages classified as spam regardless of content
+
+**Cause:** Corrupted Bayes model, usually from:
+- Training the same messages multiple times
+- Severely imbalanced training data
+- Training mistakes that need to be reset
+
+**Solution:**
+```bash
+# Purge and retrain fresh
+stalwart-spam-train --type spam --purge-first \
+    --account user@example.com \
+    --username admin --password xxx \
+    spam.mbox
+
+stalwart-spam-train --type ham \
+    --account user@example.com \
+    --username admin --password xxx \
+    ham.mbox
+
+# Test to verify
+stalwart-spam-train --test-message spam.eml \
+    --account user@example.com \
+    --username admin --password xxx
+```
+
+**Prevention:**
+- Train each message/mbox file **exactly once**
+- Use `--show-count` to preview before training
+- Use `--count N` to limit training for testing
+- Keep spam:ham ratio balanced (1:1 to 1:10 is fine)
+
+#### 7. Understanding BAYES_SPAM Score (5.10)
+
+The 5.10 score is defined in your Stalwart configuration:
+
+```toml
+[spam-filter.list.scores]
+BAYES_SPAM = 5.1
+BAYES_HAM = -3.0
+```
+
+This is the **score added** when Bayes tags a message, not the Bayes probability. To change it:
+
+```bash
+# Via API (requires admin)
+curl -X POST \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://mail.example.com/api/settings \
+  -d '{"spam-filter.list.scores.BAYES_SPAM": "3.0"}'
+
+# Or edit config.toml
+[spam-filter.list.scores]
+BAYES_SPAM = 3.0  # Lower if Bayes is too aggressive
+```
+
 ### Debug Mode
 
 For detailed debugging:
@@ -616,8 +806,77 @@ Improvements and bug reports welcome! Consider adding:
 
 MIT License
 
+## Utility Features
+
+### Testing Classification
+
+The `--test-message` feature allows you to see exactly how a message would be scored:
+
+```bash
+stalwart-spam-train --test-message message.eml \
+    --username admin --password xxx
+```
+
+**Shows:**
+- Total spam score
+- Every rule that triggered and its score
+- Rule actions (allow, reject, etc.)
+- Classification result (spam/ham/borderline)
+
+**Use cases:**
+- Debug why a message was classified incorrectly
+- Verify Bayes is working after training
+- Understand which rules are triggering
+- Test configuration changes
+
+### Limiting Messages
+
+The `--count N` option limits training to first N messages:
+
+```bash
+stalwart-spam-train --type spam --count 100 large.mbox
+```
+
+**Use cases:**
+- Test training with small batch first
+- Limit server load during training
+- Sample from large mbox files
+- Balance spam/ham training counts
+
+### Showing Counts
+
+The `--show-count` option displays message counts without authentication:
+
+```bash
+stalwart-spam-train --show-count spam_folder/
+```
+
+**Use cases:**
+- Plan training strategy
+- Verify mbox files are readable
+- Check for balanced spam/ham datasets
+- Preview before actual training
+
+### Purging Models
+
+The `--purge-first` option resets a Bayes model before training:
+
+```bash
+stalwart-spam-train --type spam --purge-first spam.mbox
+```
+
+**Use cases:**
+- Fix corrupted Bayes models
+- Start fresh after training mistakes
+- Reset after training same messages multiple times
+- Switch from testing to production training
+
+**Warning:** This deletes ALL previous training for that account/global model. Use carefully!
+
 ## See Also
 
 - [Stalwart API Documentation](https://stalw.art/docs/api/management/endpoints/)
 - [Bayes Spam Filtering](https://en.wikipedia.org/wiki/Naive_Bayes_spam_filtering)
 - [RFC 5322 - Internet Message Format](https://www.rfc-editor.org/rfc/rfc5322)
+- `SPAM_FILTER_GUIDE.md` - Comprehensive guide to understanding Stalwart's spam filter
+- `SPAM_TRAINING_QUICKSTART.md` - Quick reference for common tasks
