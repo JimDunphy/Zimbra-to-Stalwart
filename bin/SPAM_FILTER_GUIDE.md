@@ -320,8 +320,10 @@ min-prob-strength = 0.05      # Minimum probability strength
 
 #### Global vs Per-Account
 
+Stalwart supports two independent Bayes models that can coexist:
+
 ```toml
-# Global Bayes (one model for all users)
+# Global Bayes (one model shared by all users)
 [spam-filter.bayes]
 enable = true
 
@@ -330,15 +332,34 @@ enable = true
 enable = true                 # Recommended for multi-user setups
 ```
 
+**Training Global Model:**
+```bash
+# Omit --account parameter to train global model
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx \
+    spam_folder/
+```
+
+**Training Per-User Model:**
+```bash
+# Include --account parameter to train user's personal model
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx \
+    --account user@example.com \
+    spam_folder/
+```
+
 **When to use per-account:**
 - Different users get different spam (e.g., tech vs marketing)
 - Users want to train their own filters
 - Privacy: user training data stays separate
+- Multi-tenant environments
 
 **When to use global:**
 - Single user or small team
 - Everyone gets similar email
-- Want faster training (larger dataset)
+- Want faster training (larger shared dataset)
+- Simpler management
 
 #### Custom Rules
 
@@ -422,10 +443,29 @@ reject = 25.0
 - Public spam corpora
 
 **Step 2: Train balanced amounts**
+
+For global model (omit --account):
 ```bash
-# If you have 3,245 spam, train 3,000-3,500 ham for balance
-./stalwart-spam-train.py --type spam --account user@example.com spam/
-./stalwart-spam-train.py --type ham --account user@example.com ham/
+# Train global spam model
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx spam/
+
+# Train global ham model
+./stalwart-spam-train.py --type ham \
+    --username admin --password xxx ham/
+```
+
+For per-user model (include --account):
+```bash
+# Train user's personal spam model
+./stalwart-spam-train.py --type spam \
+    --username user@example.com --password xxx \
+    --account user@example.com spam/
+
+# Train user's personal ham model
+./stalwart-spam-train.py --type ham \
+    --username user@example.com --password xxx \
+    --account user@example.com ham/
 ```
 
 ### 2. Ongoing Training
@@ -474,15 +514,35 @@ let result = if spam_learns > 0.0 || ham_learns > 0.0 {
 ## Next Steps
 
 1. **Train ham immediately:**
+
+   For global model:
    ```bash
-   ./stalwart-spam-train.py --type ham --account user@example.com \
+   ./stalwart-spam-train.py --type ham \
+     --username admin --password xxx \
+     ~/thunderbird/profile/Mail/Local\ Folders/Sent
+   ```
+
+   For per-user model:
+   ```bash
+   ./stalwart-spam-train.py --type ham \
+     --account user@example.com \
+     --username user@example.com --password xxx \
      ~/thunderbird/profile/Mail/Local\ Folders/Sent
    ```
 
 2. **Test classification:**
+
+   Test with global model:
    ```bash
    ./stalwart-spam-train.py --test-message spam.eml \
-     --account user@example.com --username user@example.com --password xxx
+     --username admin --password xxx
+   ```
+
+   Test with user's model:
+   ```bash
+   ./stalwart-spam-train.py --test-message spam.eml \
+     --account user@example.com \
+     --username user@example.com --password xxx
    ```
 
 3. **Monitor scores:**

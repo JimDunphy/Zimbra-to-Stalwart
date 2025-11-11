@@ -18,20 +18,30 @@ See `INSTALL.md` for detailed installation instructions and troubleshooting.
 ## Understanding --username vs --account
 
 **Key distinction:**
-- `--username` / `--password` = **WHO YOU LOG IN AS** (your credentials)
-- `--account` = **WHO YOU'RE TRAINING FOR** (which user's spam filter)
+- `--username` / `--password` = **WHO YOU LOG IN AS** (your credentials for API access)
+- `--account` = **WHICH Bayes model to train** (per-user or global)
+
+**Two Bayes Models:**
+1. **Global model** (no `--account`) - Shared by all users, system-wide
+2. **Per-user model** (`--account user@example.com`) - Personal filter for specific user
 
 **Examples:**
 ```bash
-# Admin trains user's filter
---username admin --password xxx --account user@example.com
+# Train GLOBAL model (system-wide, no --account parameter)
+./stalwart-spam-train.py --type spam --username admin --password xxx spam.mbox
 
-# User trains their own filter
---username user@example.com --password xxx --account user@example.com
+# Train user's PERSONAL model
+./stalwart-spam-train.py --type spam \
+    --username user@example.com --password xxx \
+    --account user@example.com spam.mbox
 
-# Global training (no --account)
---username admin --password xxx
+# Admin trains another user's personal model
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx \
+    --account user@example.com spam.mbox
 ```
+
+**Important:** The `@` symbol in email addresses is automatically URL-encoded by the script.
 
 ## Quick Examples
 
@@ -73,7 +83,33 @@ See `INSTALL.md` for detailed installation instructions and troubleshooting.
     Junk.mbox
 ```
 
+### Global Training (System-Wide)
+
+**Omit `--account` to train the global model shared by all users:**
+
+```bash
+# Train global spam model
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx \
+    --server https://mail.example.com \
+    spam_folder/
+
+# Train global ham model
+./stalwart-spam-train.py --type ham \
+    --username admin --password xxx \
+    --server https://mail.example.com \
+    ham_folder/
+
+# Purge and retrain global model
+./stalwart-spam-train.py --type spam --purge-first \
+    --username admin --password xxx \
+    --server https://mail.example.com \
+    --count 500 spam.mbox
+```
+
 ### Per-User Training
+
+**Include `--account` to train a user's personal model:**
 
 ```bash
 # Train for specific user (admin authenticating)

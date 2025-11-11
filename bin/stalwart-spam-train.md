@@ -120,16 +120,32 @@ stalwart-spam-train --type spam --recursive /var/mail/spam/
 stalwart-spam-train --type spam --pattern "*.msg" /path/to/messages/
 ```
 
-### Per-Account Training
+### Global Training (System-Wide)
+
+Train the global Bayes model shared by all users:
+
+```bash
+# Train global spam model (no --account parameter)
+stalwart-spam-train --type spam \
+    --username admin --password xxx \
+    spam/
+
+# Train global ham model
+stalwart-spam-train --type ham \
+    --username admin --password xxx \
+    ham/
+```
+
+### Per-User Training
 
 Train spam filter for a specific user account:
 
 ```bash
-# Train for specific user
+# Train for specific user (include --account parameter)
 stalwart-spam-train --type spam --account user@example.com spam/
 
 # Train ham for specific user
-stalwart-spam-train --type ham --account john.doe ham/
+stalwart-spam-train --type ham --account user@example.com ham/
 ```
 
 ### Custom Server
@@ -191,27 +207,49 @@ stalwart-spam-train \
 
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
-| `--username` / `--password` | **WHO YOU AUTHENTICATE AS**<br>Your login credentials to access the API | `--username admin`<br>`--username user@example.com` |
-| `--account` | **WHO YOU'RE TRAINING FOR**<br>Which user's spam filter to train<br>(Optional: omit for global training) | `--account user@example.com` |
+| `--username` / `--password` | **WHO YOU AUTHENTICATE AS**<br>Your login credentials for API access | `--username admin`<br>`--username user@example.com` |
+| `--account` | **WHICH Bayes model to train**<br>Per-user model OR global model<br>(Omit `--account` for global training) | `--account user@example.com` |
+
+### Two Bayes Models
+
+Stalwart supports two independent Bayes models:
+
+1. **Global Model** (system-wide) - Shared by all users
+   - Train by **omitting** the `--account` parameter
+   - Affects all users on the server
+   - Requires admin authentication
+
+2. **Per-User Model** (personal) - Individual user's filter
+   - Train by **including** `--account user@example.com`
+   - Only affects the specified user
+   - User can train their own, or admin can train for them
+
+**Note:** Email addresses with `@` symbols are automatically URL-encoded by the script.
 
 ### Examples
 
-**Admin training for a user:**
+**Train GLOBAL model (no --account):**
 ```bash
-# Admin "admin" trains user@example.com's filter
---username admin --password xxx --account user@example.com
+# Admin trains system-wide global model
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx \
+    --server https://mail.example.com \
+    spam_folder/
 ```
 
-**User training their own filter:**
+**Train USER's personal model (with --account):**
 ```bash
-# User trains their own filter
---username user@example.com --password xxx --account user@example.com
-```
+# User trains their own personal filter
+./stalwart-spam-train.py --type spam \
+    --username user@example.com --password xxx \
+    --account user@example.com \
+    spam_folder/
 
-**Global training (no --account):**
-```bash
-# Trains global filter affecting all users
---username admin --password xxx
+# Admin trains another user's filter
+./stalwart-spam-train.py --type spam \
+    --username admin --password xxx \
+    --account user@example.com \
+    spam_folder/
 ```
 
 ## Command-Line Options

@@ -15,6 +15,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple, List
+from urllib.parse import quote
 import base64
 import getpass
 import mailbox
@@ -82,7 +83,9 @@ class StalwartSpamTrainer:
 
             # Build endpoint URL
             if account_id:
-                url = f"{self.server}/api/spam-filter/train/{train_type}/{account_id}"
+                # URL-encode the account_id (e.g., jad@aesir.com -> jad%40aesir.com)
+                encoded_account = quote(account_id, safe='')
+                url = f"{self.server}/api/spam-filter/train/{train_type}/{encoded_account}"
             else:
                 url = f"{self.server}/api/spam-filter/train/{train_type}"
 
@@ -628,7 +631,9 @@ Token File:
     # Handle purge-first option
     if args.purge_first:
         if args.account:
-            purge_url = f"{args.server}/api/store/purge/in-memory/default/bayes-account/{args.account}"
+            # URL-encode the account ID
+            encoded_account = quote(args.account, safe='')
+            purge_url = f"{args.server}/api/store/purge/in-memory/default/bayes-account/{encoded_account}"
             model_type = f"account '{args.account}'"
         else:
             purge_url = f"{args.server}/api/store/purge/in-memory/default/bayes-global"
