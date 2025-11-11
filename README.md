@@ -48,8 +48,8 @@ This project exists to help others make the same transition smoothly — preserv
 ## Getting Started
 1. Clone this repository:
    ```bash
-   git clone https://github.com/<your-username>/zimbra-to-stalwart.git
-   cd zimbra-to-stalwart
+   git clone https://github.com/JimDunphy/Stalwart-Tools.git
+   cd Stalwart-Tools
 
 2. Review available scripts in the `scripts/` directory.
 3. Consult the `docs/` section for migration procedures and configuration mappings.
