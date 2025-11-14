@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  rspamd:
+    image: rspamd/rspamd:3.9.0
+    container_name: rspamd
+    depends_on:
+      - redis
+    restart: unless-stopped
+    ports:
+      - "11334:11334"   # Web UI
+      - "11332:11332"   # Milter
+      - "11333:11333"   # Controller API
+    volumes:
+      - ./rspamd:/etc/rspamd
+      - rspamd-data:/var/lib/rspamd
+
+volumes:
+  redis-data:
+  rspamd-data:
+

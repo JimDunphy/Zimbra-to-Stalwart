@@ -83,7 +83,7 @@ class StalwartSpamTrainer:
 
             # Build endpoint URL
             if account_id:
-                # URL-encode the account_id (e.g., jad@aesir.com -> jad%40aesir.com)
+                # URL-encode the account_id (e.g., user@example.com -> user%40example.com)
                 encoded_account = quote(account_id, safe='')
                 url = f"{self.server}/api/spam-filter/train/{train_type}/{encoded_account}"
             else:
